@@ -74,12 +74,7 @@ class DecisionTreeClassifier:
         self.tree_ = Node()
         X_ = self.__get_values(X)
         y_ = self.__get_values(y)
-        #feature_types = [self.__check_type(X_[:, column]) for column in range(X.shape[1])]
-        feature_types = []
-        for column in range(X.shape[1]):
-            f_type = self.__check_type(X_[:, column])
-            print(f_type)
-            feature_types.append(f_type)
+        feature_types = [self.__check_type(X_[:, column]) for column in range(X.shape[1])]
         self.__generate_tree(self.tree_, X_, y_, feature_types)
     
     def __generate_tree(self, tree, X, y, feature_types):

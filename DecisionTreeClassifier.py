@@ -206,36 +206,6 @@ class DecisionTreeClassifier:
         for index, branch in enumerate(branches):
             self.__decide(node.children[index], X, pred, branch)
 
-    def better_predict(self, X):
-        pred = np.full(X.shape[0], -1)
-        stack = deque([self.tree_])
-        indices_stack = deque([np.arange(X.shape[0])])
-        while len(stack) > 0:
-            current = stack.pop()
-            current_indices = indices_stack.pop()
-            while current:
-                len_children = len(current.children)
-                if len_children > 0:
-                    tree_split = current.get_split_indices(X, intersect_with=current_indices)
-                    for index in range(len_children - 1, 0, -1):
-                        stack.append(current.children[index])
-                        indices_stack.append(tree_split[index])
-
-                    current = current.children[0]
-                    current_indices = tree_split[0]
-                else:
-                    # leaf
-                    pred[current_indices] = current.label
-                    current = None
-
-
-        return pred
-    
     def score(self, X, y):
         y_pred = self.predict(X)
         return y_pred[y == y_pred].size / y_pred.size
-    
-    def better_score(self, X, y):
-        y_pred = self.better_predict(X)
-        return y_pred[y == y_pred].size / y_pred.size
-        

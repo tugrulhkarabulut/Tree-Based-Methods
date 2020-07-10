@@ -2,15 +2,15 @@ import numpy as np
 import pandas as pd
 import scipy.stats as st
 from time import time
-from sklearn import tree
+from collections import deque
 
 class Node:
-    def __init__(self, feature=-1, split=None, entropy=0):
+    def __init__(self, feature=-1, split=None, impurity=np.inf):
         # Split feature
         self.feature = feature
         # Split criterion
         self.split = split
-        self.entropy = entropy
+        self.impurity = impurity
         self.children = []
         self.leaf = False
         self.label = None
@@ -39,46 +39,70 @@ class Node:
             indices_right = np.intersect1d(indices_right, intersect_with, assume_unique=True)
 
         return [indices_left, indices_right]
-            
-    def entropy_for_split(self, X, y):
-        splitted_indices = self.get_split_indices(X)  
-        entropies = np.zeros(len(splitted_indices))
-        len_X = len(X)
-        for index, branch_indices in enumerate(splitted_indices):
-            y_branch = y[branch_indices]
-            entropies[index] = self.calc_entropy(y_branch) * len(y_branch)
-        return np.sum(entropies) / len_X
-    
-    def calc_entropy(self, y, store=False):
+
+    def __get_probs(self, y):
         unique_y = np.unique(y)
         probs = np.zeros(len(unique_y))
         y_len = len(y)
         for i, y_i in enumerate(unique_y):
             probs[i] = len(y[y == y_i]) / y_len
         
-        entropy = -np.sum(probs * np.log2(probs + 10e-8))
+        return probs
+
+    def calc_impurity(self, y, criterion, store=False):
+        probs = self.__get_probs(y)
+        impurity = None
+        if criterion == 'entropy':
+            impurity = self.__calc_entropy(probs)
+        elif criterion == 'gini':
+            impurity = self.__calc_gini(probs)
         if store:
-            self.entropy = entropy
+                self.impurity = impurity
+        return impurity
+            
+    def impurity_for_split(self, X, y, criterion):
+        splitted_indices = self.get_split_indices(X)  
+        impurities = np.zeros(len(splitted_indices))
+        len_X = len(X)
+        for index, branch_indices in enumerate(splitted_indices):
+            y_branch = y[branch_indices]
+            impurities[index] = self.calc_impurity(y_branch, criterion) * len(y_branch)
+        return np.sum(impurities) / len_X
+    
+    def __calc_entropy(self, probs):
+        entropy = -np.sum(probs * np.log(probs + 10e-8))
         return entropy
+    
+    def __calc_gini(self, probs):
+        gini = 1 - np.sum(probs ** 2)
+        return gini
+
+    def __str__(self):
+        return 'Node(leaf={})'.format(self.leaf)
+    
+    def __repr__(self):
+        return 'Node(leaf={})'.format(self.leaf)
 
 
 class DecisionTreeClassifier:
-    def __init__(self, tol=0.5, max_depth=10, min_members=50):
+    def __init__(self, tol=0.5, max_depth=10, min_members=50, criterion='entropy'):
         self.tol = tol
-        self.tree = None
         self.tree_depth = 0
         self.max_depth = max_depth
         self.min_members = min_members
+        self.criterion = criterion
     
     def fit(self, X, y):
         self.tree_ = Node()
+        self.features_ = X.columns if isinstance(X, pd.DataFrame) else list(range(X.shape[1]))
+        self.important_features_ = []
         X_ = self.__get_values(X)
         y_ = self.__get_values(y)
         feature_types = [self.__check_type(X_[:, column]) for column in range(X.shape[1])]
         self.__generate_tree(self.tree_, X_, y_, feature_types)
     
     def __generate_tree(self, tree, X, y, feature_types):
-        if len(y) <= self.min_members or tree.calc_entropy(y, store=True) < self.tol:
+        if len(y) <= self.min_members or tree.calc_impurity(y, store=True, criterion=self.criterion) < self.tol:
             self.__label_node(tree, y)
             return
         
@@ -90,11 +114,17 @@ class DecisionTreeClassifier:
             self.__label_node(tree, y)
             return
         
+        self.important_features_.append(self.features_[tree.feature])
+
         splitted_data = tree.get_split_indices(X)
-        
-        if len(splitted_data) < 2:
+        num_branches = len(splitted_data)
+        if num_branches < 2:
             self.__label_node(tree, y)
             return
+        elif num_branches == 2:
+            if len(splitted_data[0]) == 0 or len(splitted_data[1]) == 0:
+                self.__label_node(tree, y)
+                return
                 
         for branch_indices in splitted_data:
             new_node = Node()
@@ -115,7 +145,7 @@ class DecisionTreeClassifier:
                 tree.split = np.unique(X_feature)
                 if len(tree.split) < 2:
                     continue
-                entropy = tree.entropy_for_split(X, y)
+                entropy = tree.impurity_for_split(X, y, criterion=self.criterion)
                 if entropy < min_entropy:
                     min_entropy = entropy
                     best_feature = feature
@@ -131,7 +161,7 @@ class DecisionTreeClassifier:
                         continue
                     
                     tree.split = value
-                    entropy = tree.entropy_for_split(X, y)
+                    entropy = tree.impurity_for_split(X, y, criterion=self.criterion)
 
                     if entropy < min_entropy:
                         min_entropy = entropy
@@ -175,8 +205,37 @@ class DecisionTreeClassifier:
         branches = node.get_split_indices(X, indices)
         for index, branch in enumerate(branches):
             self.__decide(node.children[index], X, pred, branch)
+
+    def better_predict(self, X):
+        pred = np.full(X.shape[0], -1)
+        stack = deque([self.tree_])
+        indices_stack = deque([np.arange(X.shape[0])])
+        while len(stack) > 0:
+            current = stack.pop()
+            current_indices = indices_stack.pop()
+            while current:
+                len_children = len(current.children)
+                if len_children > 0:
+                    tree_split = current.get_split_indices(X, intersect_with=current_indices)
+                    for index in range(len_children - 1, 0, -1):
+                        stack.append(current.children[index])
+                        indices_stack.append(tree_split[index])
+
+                    current = current.children[0]
+                    current_indices = tree_split[0]
+                else:
+                    # leaf
+                    pred[current_indices] = current.label
+                    current = None
+
+
+        return pred
     
     def score(self, X, y):
         y_pred = self.predict(X)
+        return y_pred[y == y_pred].size / y_pred.size
+    
+    def better_score(self, X, y):
+        y_pred = self.better_predict(X)
         return y_pred[y == y_pred].size / y_pred.size
         

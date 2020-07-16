@@ -5,7 +5,7 @@ from DecisionTreeClassifier import DecisionTreeClassifier
 
 class RandomForestClassifier:
     def __init__(self, 
-                 n_trees, 
+                 n_trees=100, 
                  tol=0.1, 
                  max_depth=None, 
                  min_members=10, 

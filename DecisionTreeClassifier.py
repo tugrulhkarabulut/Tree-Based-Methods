@@ -64,14 +64,21 @@ class Node:
                 self.impurity = impurity
         return impurity
             
-    def impurity_for_split(self, X, y, criterion):
+    def impurity_for_split(self, X, y, weights, criterion):
         splitted_indices = self.get_split_indices(X)  
         impurities = np.zeros(len(splitted_indices))
-        len_X = len(X)
+        if weights is not None:
+            total_weight = np.sum(weights)
+        else:
+            total_weight = len(y)
         for index, branch_indices in enumerate(splitted_indices):
             y_branch = y[branch_indices]
-            impurities[index] = self.calc_impurity(y_branch, criterion) * len(y_branch)
-        return np.sum(impurities) / len_X
+            if weights is not None:
+                total_branch_weight = np.sum(weights[branch_indices])
+            else:
+                total_branch_weight = len(y_branch)
+            impurities[index] = self.calc_impurity(y_branch, criterion) * total_branch_weight
+        return np.sum(impurities) / total_weight
     
     def __calc_entropy(self, probs):
         entropy = -np.sum(probs * np.log(probs + 10e-8))
@@ -104,19 +111,22 @@ class DecisionTreeClassifier:
         self.split_method = split_method
         self.max_features = max_features
     
-    def fit(self, X, y):
+    def fit(self, X, y, weights=None):
         self.tree_ = Node()
         X_ = self.__get_values(X)
         y_ = self.__get_values(y)
+        self.weights_ = weights
+
         if self.split_method == 'binary':
             feature_types = None
         elif self.split_method == 'nary':
             feature_types = [self.__check_type(X_[:, column]) for column in range(X.shape[1])]
         else:
             raise ValueError('parameter feature_types must be binary or nary')
-        self.__generate_tree(self.tree_, X_, y_, feature_types)
-    
-    def __generate_tree(self, tree, X, y, feature_types):
+        
+        self.__generate_tree(self.tree_, X_, y_, weights, feature_types)
+        
+    def __generate_tree(self, tree, X, y, weights, feature_types):
         if len(y) <= self.min_members:
             self.__label_node(tree, y)
             return
@@ -125,10 +135,11 @@ class DecisionTreeClassifier:
             self.__label_node(tree, y)
             return
         
-        if self.max_features and self.tree_.get_depth() >= self.max_depth:
+        if self.max_depth and self.tree_.get_depth() >= self.max_depth:
             self.__label_node(tree, y)
+            return
         
-        best_feature_split = self.__split_attribute(tree, X, y, feature_types)        
+        best_feature_split = self.__split_attribute(tree, X, y, weights, feature_types)        
         tree.feature = best_feature_split[0]
         tree.split = best_feature_split[1]
         
@@ -149,10 +160,11 @@ class DecisionTreeClassifier:
         for branch_indices in splitted_data:
             new_node = Node()
             tree.children.append(new_node)
-            self.__generate_tree(new_node, X[branch_indices], y[branch_indices], feature_types=None)
+            branch_weights = weights[branch_indices] if weights is not None else None
+            self.__generate_tree(new_node, X[branch_indices], y[branch_indices], branch_weights, feature_types=None)
         
     
-    def __split_attribute(self, tree, X, y, feature_types=None):
+    def __split_attribute(self, tree, X, y, weights, feature_types=None):
         min_impurity = np.inf
         impurity = min_impurity
         best_feature = None
@@ -173,7 +185,7 @@ class DecisionTreeClassifier:
                 tree.split = np.unique(X_feature)
                 if len(tree.split) < 2:
                     continue
-                impurity = tree.impurity_for_split(X, y, criterion=self.criterion)
+                impurity = tree.impurity_for_split(X, y, weights, criterion=self.criterion)
                 if impurity < min_impurity:
                     min_impurity = impurity
                     best_feature = feature
@@ -189,8 +201,7 @@ class DecisionTreeClassifier:
                         continue
                     
                     tree.split = value
-                    impurity = tree.impurity_for_split(X, y, criterion=self.criterion)
-
+                    impurity = tree.impurity_for_split(X, y, weights, criterion=self.criterion)
                     if impurity < min_impurity:
                         min_impurity = impurity
                         best_feature = feature

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import scipy.stats as st
-from DecisionTreeClassifier import DecisionTreeClassifier
+from DecisionTree import DecisionTreeClassifier
 
 class RandomForestClassifier:
     def __init__(self, 

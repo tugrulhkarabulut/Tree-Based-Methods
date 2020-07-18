@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from DecisionTreeClassifier import DecisionTreeClassifier
+from DecisionTree import DecisionTreeClassifier
 
 class AdaBoostClassifier:
     def __init__(self, 

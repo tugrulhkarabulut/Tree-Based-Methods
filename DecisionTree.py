@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import scipy.stats as st
-from collections import deque
 
 class Node:
     def __init__(self, feature=-1, split=None, impurity=np.inf):
@@ -54,12 +53,19 @@ class Node:
         return probs
 
     def calc_impurity(self, y, criterion, store=False):
-        probs = self.__get_probs(y)
         impurity = None
+
         if criterion == 'entropy':
+            probs = self.__get_probs(y)
             impurity = self.__calc_entropy(probs)
         elif criterion == 'gini':
+            probs = self.__get_probs(y)
             impurity = self.__calc_gini(probs)
+        elif criterion == 'mse':
+            impurity = self.__mean_squared_err(y)
+        elif criterion == 'mae':
+            impurity = self.__mean_absolute_err(y)
+        
         if store:
                 self.impurity = impurity
         return impurity
@@ -87,6 +93,14 @@ class Node:
     def __calc_gini(self, probs):
         gini = 1 - np.sum(probs ** 2)
         return gini
+    
+    def __mean_squared_err(self, y):
+        y_m = np.mean(y)
+        return np.sum((y - y_m)**2)
+    
+    def __mean_absolute_err(self, y):
+        y_m = np.mean(y)
+        return np.abs(y - y_m)
 
     def __str__(self):
         return 'Node(leaf={})'.format(self.leaf)
@@ -95,26 +109,25 @@ class Node:
         return 'Node(leaf={})'.format(self.leaf)
 
 
-class DecisionTreeClassifier:
+class BaseDecisionTreeEstimator:
     def __init__(self, 
-                 tol=None, 
-                 max_depth=None, 
-                 min_members=10, 
-                 criterion='entropy', 
-                 split_method='nary', 
-                 max_features=None):
+                 tol, 
+                 max_depth, 
+                 min_members, 
+                 criterion, 
+                 split_method, 
+                 max_features):
         self.tol = tol
-        self.tree_depth = 0
         self.max_depth = max_depth
         self.min_members = min_members
         self.criterion = criterion
         self.split_method = split_method
         self.max_features = max_features
-    
+
     def fit(self, X, y, weights=None):
         self.tree_ = Node()
-        X_ = self.__get_values(X)
-        y_ = self.__get_values(y)
+        X_ = self._get_values(X)
+        y_ = self._get_values(y)
         self.weights_ = weights
 
         if self.split_method == 'binary':
@@ -128,40 +141,41 @@ class DecisionTreeClassifier:
         
     def __generate_tree(self, tree, X, y, weights, feature_types):
         if len(y) <= self.min_members:
-            self.__label_node(tree, y)
+            self._label_node(tree, y)
             return
 
         if self.tol and tree.calc_impurity(y, store=True, criterion=self.criterion) < self.tol:
-            self.__label_node(tree, y)
+            self._label_node(tree, y)
             return
         
         if self.max_depth and self.tree_.get_depth() >= self.max_depth:
-            self.__label_node(tree, y)
+            print('labelling')
+            self._label_node(tree, y)
             return
-        
+                
         best_feature_split = self.__split_attribute(tree, X, y, weights, feature_types)        
         tree.feature = best_feature_split[0]
         tree.split = best_feature_split[1]
         
         if tree.feature is None or tree.split is None:
-            self.__label_node(tree, y)
+            self._label_node(tree, y)
             return
         
         splitted_data = tree.get_split_indices(X)
         num_branches = len(splitted_data)
         if num_branches < 2:
-            self.__label_node(tree, y)
+            self._label_node(tree, y)
             return
         elif num_branches == 2:
             if len(splitted_data[0]) == 0 or len(splitted_data[1]) == 0:
-                self.__label_node(tree, y)
+                self._label_node(tree, y)
                 return
                 
         for branch_indices in splitted_data:
             new_node = Node()
             tree.children.append(new_node)
             branch_weights = weights[branch_indices] if weights is not None else None
-            self.__generate_tree(new_node, X[branch_indices], y[branch_indices], branch_weights, feature_types=None)
+            self.__generate_tree(new_node, X[branch_indices], y[branch_indices], branch_weights, feature_types)
         
     
     def __split_attribute(self, tree, X, y, weights, feature_types=None):
@@ -209,11 +223,17 @@ class DecisionTreeClassifier:
                 
         return best_feature, best_split_value, min_impurity
     
-    def __label_node(self, node, y):
-        most_frequent = st.mode(y)[0]
-        rand = np.random.randint(len(most_frequent))
-        node.leaf = True
-        node.label = most_frequent[rand]
+    def _label_node(self, node, y):
+        pass
+
+    def _decide(self, node, X, pred, indices):
+        if node.leaf:
+            pred[indices] = node.label
+            return
+            
+        branches = node.get_split_indices(X, indices)
+        for index, branch in enumerate(branches):
+            self._decide(node.children[index], X, pred, branch)
 
     def __check_type(self, data):
         try:
@@ -224,25 +244,32 @@ class DecisionTreeClassifier:
         except ValueError:
             return 'cat'
         
-    def __get_values(self, data):
+    def _get_values(self, data):
         if isinstance(data, pd.DataFrame) or isinstance(data, pd.Series):
             return data.values
         return data
 
+class DecisionTreeClassifier(BaseDecisionTreeEstimator):
+    def __init__(self, 
+                 tol=None, 
+                 max_depth=None, 
+                 min_members=10, 
+                 criterion='entropy', 
+                 split_method='nary', 
+                 max_features=None):
+        super().__init__(tol, max_depth, min_members, criterion, split_method, max_features)
+    
+    def _label_node(self, node, y):
+        most_frequent = st.mode(y)[0]
+        rand = np.random.randint(len(most_frequent))
+        node.leaf = True
+        node.label = most_frequent[rand]
+    
     def predict(self, X):
-        X_ = self.__get_values(X)
+        X_ = self._get_values(X)
         pred = np.full(X_.shape[0], -1)
-        self.__decide(self.tree_, X_, pred, np.arange(X_.shape[0]))
+        self._decide(self.tree_, X_, pred, np.arange(X_.shape[0]))
         return pred
-
-    def __decide(self, node, X, pred, indices):
-        if node.leaf:
-            pred[indices] = node.label
-            return
-            
-        branches = node.get_split_indices(X, indices)
-        for index, branch in enumerate(branches):
-            self.__decide(node.children[index], X, pred, branch)
 
     def score(self, X, y):
         y_pred = self.predict(X)
@@ -253,3 +280,40 @@ class DecisionTreeClassifier:
     
     def __repr__(self):
         return "DecisionTreeClassifier(tol={}, max_depth={}, min_members={}, criterion={}, split_method={}, max_features={})".format(self.tol, self.max_depth, self.min_members, self.criterion, self.criterion, self.split_method)
+
+
+class DecisionTreeRegressor(BaseDecisionTreeEstimator):
+    def __init__(self, 
+                 tol=None, 
+                 max_depth=None, 
+                 min_members=10, 
+                 criterion='mse', 
+                 split_method='nary', 
+                 max_features=None):
+        super().__init__(tol, max_depth, min_members, criterion, split_method, max_features)
+    
+    def _label_node(self, node, y):
+        node.leaf = True
+        if self.criterion == 'mse':
+            node.label = np.mean(y)
+        elif self.criterion == 'mae':
+            node.label = np.median(y)
+
+    def predict(self, X):
+        X_ = self._get_values(X)
+        pred = np.full(X_.shape[0], 0.0)
+        self._decide(self.tree_, X_, pred, np.arange(X_.shape[0]))
+        return pred
+
+    def score(self, X, y):
+        y_pred = self.predict(X)
+        y_m = np.mean(y)
+        ss_reg = np.sum((y_pred - y_m)**2)
+        ss_tot = np.sum((y - y_m)**2)
+        return ss_reg / ss_tot
+    
+    def __str__(self):
+        return "DecisionTreeRegressor(tol={}, max_depth={}, min_members={}, criterion={}, split_method={}, max_features={})".format(self.tol, self.max_depth, self.min_members, self.criterion, self.criterion, self.split_method)
+    
+    def __repr__(self):
+        return "DecisionTreeRegressor(tol={}, max_depth={}, min_members={}, criterion={}, split_method={}, max_features={})".format(self.tol, self.max_depth, self.min_members, self.criterion, self.criterion, self.split_method)

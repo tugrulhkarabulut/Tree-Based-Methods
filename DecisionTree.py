@@ -15,7 +15,7 @@ class Node:
         self.depth = 0
     
     def get_depth(self):
-        if self.leaf or len(self.children) == 0 :
+        if self.leaf or len(self.children) == 0:
             return 1
         return 1 + max([child.get_depth() for child in self.children])
         
@@ -67,7 +67,7 @@ class Node:
             impurity = self.__mean_absolute_err(y)
         
         if store:
-                self.impurity = impurity
+            self.impurity = impurity
         return impurity
             
     def impurity_for_split(self, X, y, weights, criterion):

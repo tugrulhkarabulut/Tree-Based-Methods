@@ -5,5 +5,5 @@ They are implemented using numpy and the code is at an educational level rather 
 
 You can also check the [Jupyter notebook file](https://github.com/tugrulhkarabulut/Tree-Based-Methods/blob/master/Tree%20Based%20Classification%20Applications.ipynb) if you how well the algorithms are doing compared to one another in a data set.
 
-Theoretical background of the algorithms are explained in the [tree-based-methods.pdf](https://github.com/tugrulhkarabulut/Tree-Based-Methods/blob/master/tree-based-methods.pdf) file that's also present in this repo. You can read it if you
+Theoretical background of the algorithms are explained in the [tree-based-methods.pdf](https://raw.githubusercontent.com/tugrulhkarabulut/Tree-Based-Methods/master/tree-based-methods.pdf) file that's also present in this repo. You can read it if you
 want to learn about them. Also, you can read in my [blog](https://tugrulhkarabulut.github.io/blog).
